@@ -5,8 +5,8 @@ services:
     hostname: vllm-qwen-30b
 
     # Expose port for direct testing
-    ports:
-      - "8002:8000"
+    #ports:
+    #  - "8002:8000"
 
     environment:
       # DGX Spark optimizations

@@ -5,8 +5,8 @@ services:
     hostname: vllm-gpt-oss-20b
 
     # Expose port for direct testing
-    ports:
-      - "8001:8000"
+    #ports:
+    #  - "8001:8000"
 
     environment:
       # DGX Spark optimizations
