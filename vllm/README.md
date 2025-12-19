@@ -108,6 +108,10 @@ llms/vllm/
 ├── README.md                    # This file
 ├── docker-compose.yml           # NGINX gateway configuration
 ├── certs.sh                     # SSL certificate generation script
+├── quick-start.sh               # Interactive deployment script
+├── shutdown.sh                  # Graceful shutdown script
+├── test-endpoints.sh            # Endpoint testing script
+├── .env.example                 # Environment variable template
 ├── ssl/                         # Generated SSL certificates (gitignored)
 │   ├── public.pem              # Self-signed certificate
 │   └── private.pem             # Private key
@@ -212,7 +216,10 @@ Expected output: `healthy`
 Test the gateway with a sample request:
 
 ```bash
-# Test GPT-OSS-120B
+# Quick test all endpoints
+./test-endpoints.sh
+
+# Or manually test GPT-OSS-120B
 curl -k https://localhost/gpt-oss-120b/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
@@ -221,6 +228,21 @@ curl -k https://localhost/gpt-oss-120b/v1/chat/completions \
     "max_tokens": 100,
     "temperature": 0.7
   }'
+```
+
+### Step 7. Shutdown (When Done)
+
+Gracefully stop all services:
+
+```bash
+# Graceful shutdown (recommended)
+./shutdown.sh
+
+# Force shutdown (removes containers)
+./shutdown.sh --force
+
+# Remove everything including cached models (WARNING: requires re-download)
+./shutdown.sh --force --remove-volumes
 ```
 
 ---
@@ -520,7 +542,13 @@ docker exec vllm-gpt-oss-120b nvidia-smi
 ### Stop Services
 
 ```bash
-# Stop all services
+# Recommended: Use the shutdown script for graceful shutdown
+./shutdown.sh
+
+# Force shutdown (removes containers)
+./shutdown.sh --force
+
+# Manual shutdown if needed
 cd llms/vllm
 docker compose down
 cd gpt-oss-120b && docker compose down
