@@ -1,0 +1,35 @@
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: vllm-nginx-proxy
+
+    ports:
+      - "${NGINX_HTTPS_PORT:-443}:443"
+      - "${NGINX_HTTP_PORT:-80}:80"
+
+    volumes:
+      - ./nginx/multi-model.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+
+    restart: always
+
+    # Join the same network as the vLLM containers
+    networks:
+      - vllm_network
+
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  nginx_logs:
+    driver: local
+
+networks:
+  vllm_network:
+    name: vllm_network
+    driver: bridge
+    external: true  # Use existing network created by model containers
