@@ -1,5 +1,5 @@
 services:
-  vllm-gpt-oss-20b:
+  vllm-gpt-oss-120b:
     image: nvcr.io/nvidia/vllm:25.11-py3
     container_name: vllm-gpt-oss-20b
     hostname: vllm-gpt-oss-20b
