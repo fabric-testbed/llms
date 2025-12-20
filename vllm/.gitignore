@@ -1,0 +1,8 @@
+# Environment files
+.env
+
+# SSL certificates
+ssl/
+
+# Docker volumes
+*.volume
