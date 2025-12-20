@@ -37,25 +37,48 @@ fi
 echo -e "${GREEN}✓ Prerequisites check passed${NC}"
 echo ""
 
-# Check for HF_TOKEN
-if [ -z "$HF_TOKEN" ]; then
-    if [ -f ".env" ]; then
-        source .env
-    fi
-
-    if [ -z "$HF_TOKEN" ]; then
-        echo -e "${YELLOW}Warning: HF_TOKEN not set${NC}"
-        echo "Some models may require HuggingFace authentication."
-        echo "To set it: export HF_TOKEN=your_token_here"
-        echo "Or create a .env file based on .env.example"
+# Check for .env file and HF_TOKEN
+if [ ! -f ".env" ]; then
+    if [ -f ".env.example" ]; then
+        echo -e "${YELLOW}No .env file found. Creating from .env.example...${NC}"
+        cp .env.example .env
+        echo -e "${GREEN}✓ Created .env file${NC}"
         echo ""
-        read -p "Continue without HF_TOKEN? [y/N] " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            exit 1
-        fi
+        echo -e "${YELLOW}IMPORTANT: Edit .env and set your HF_TOKEN${NC}"
+        echo "  1. Get token from: https://huggingface.co/settings/tokens"
+        echo "  2. Edit llms/vllm/.env and set HF_TOKEN=your_token_here"
+        echo "  3. Run this script again"
+        echo ""
+        exit 1
     fi
 fi
+
+# Load environment variables
+if [ -f ".env" ]; then
+    source .env
+fi
+
+# Check for HF_TOKEN
+if [ -z "$HF_TOKEN" ]; then
+    echo -e "${YELLOW}Warning: HF_TOKEN not set in .env${NC}"
+    echo "Some models may require HuggingFace authentication."
+    echo ""
+    echo "To set it:"
+    echo "  1. Get token from: https://huggingface.co/settings/tokens"
+    echo "  2. Edit llms/vllm/.env and set HF_TOKEN=your_token_here"
+    echo "  OR: export HF_TOKEN=your_token_here"
+    echo ""
+    read -p "Continue without HF_TOKEN? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+fi
+
+# Sync environment variables to model directories
+echo "Syncing environment variables to model directories..."
+./sync-env.sh
+echo ""
 
 # Generate SSL certificates if they don't exist
 if [ ! -f "ssl/public.pem" ] || [ ! -f "ssl/private.pem" ]; then

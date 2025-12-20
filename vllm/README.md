@@ -111,7 +111,9 @@ llms/vllm/
 ├── quick-start.sh               # Interactive deployment script
 ├── shutdown.sh                  # Graceful shutdown script
 ├── test-endpoints.sh            # Endpoint testing script
+├── sync-env.sh                  # Sync environment variables to model directories
 ├── .env.example                 # Environment variable template
+├── .env                         # Your environment configuration (create from .env.example)
 ├── ssl/                         # Generated SSL certificates (gitignored)
 │   ├── public.pem              # Self-signed certificate
 │   └── private.pem             # Private key
@@ -152,36 +154,64 @@ cp /path/to/your/key.pem ssl/private.pem
 
 ### Step 2. Configure HuggingFace Authentication
 
-Set your HuggingFace token for downloading gated models:
+Create a `.env` file from the template and set your HuggingFace token:
 
 ```bash
-export HF_TOKEN=your_hf_token_here
+cd llms/vllm
+
+# Copy the example environment file
+cp .env.example .env
+
+# Edit .env and set your HF_TOKEN
+# Get your token from: https://huggingface.co/settings/tokens
+nano .env  # or use your preferred editor
 ```
 
-Or create a `.env` file:
+Your `.env` file should look like:
 ```bash
 # llms/vllm/.env
-HF_TOKEN=your_hf_token_here
+HF_TOKEN=hf_your_actual_token_here
 VLLM_LOGGING_LEVEL=INFO
 NGINX_HTTPS_PORT=443
 NGINX_HTTP_PORT=80
 ```
 
+**Important**: The `sync-env.sh` script will automatically propagate these variables to each model directory. This happens automatically when you run `quick-start.sh`, or you can run it manually:
+
+```bash
+./sync-env.sh
+```
+
+This creates synchronized `.env` files in each model directory (`gpt-oss-120b/.env`, `qwen-30b/.env`, etc.) that are auto-generated and should not be edited directly.
+
 ### Step 3. Start Model Servers
 
 Launch the models you want to deploy. You can start all three or select individual models based on memory requirements.
 
+**Important**: Make sure you've run `sync-env.sh` first (or use `quick-start.sh` which does this automatically).
+
 **Option A: Start all models** (requires ~110GB+ GPU memory):
 ```bash
-cd llms/vllm/gpt-oss-20b && docker compose up -d
+cd llms/vllm
+
+# Sync environment variables first
+./sync-env.sh
+
+# Start models
+cd gpt-oss-20b && docker compose up -d
 cd ../gpt-oss-120b && docker compose up -d
 cd ../qwen-30b && docker compose up -d
 ```
 
 **Option B: Start specific models**:
 ```bash
+cd llms/vllm
+
+# Sync environment variables first
+./sync-env.sh
+
 # Start only GPT-OSS-120B (recommended for most use cases)
-cd llms/vllm/gpt-oss-120b
+cd gpt-oss-120b
 docker compose up -d
 ```
 
@@ -631,9 +661,10 @@ cd .. && docker compose restart
 | `504 Gateway Timeout` | Model loading or inference taking too long | Increase NGINX timeout in `multi-model.conf`, check vLLM logs for errors |
 | `CUDA Out of Memory` | Multiple large models exceeding GPU capacity | Stop some models, reduce `--max-model-len`, or use `--kv-cache-dtype fp8` |
 | `Network vllm_network not found` | Model containers not started first | Start at least one model container before starting NGINX |
-| `Cannot access gated repo` | HuggingFace token invalid or missing | Set `HF_TOKEN` environment variable, regenerate token if expired |
+| `Cannot access gated repo` | HuggingFace token invalid or missing | Run `./sync-env.sh` to propagate HF_TOKEN, verify token in .env file |
 | Container fails to start | Port already in use | Change port mapping in docker-compose.yml or stop conflicting service |
-| Model download fails | Network issues or authentication | Verify `HF_TOKEN`, check internet connectivity, use `huggingface-cli login` |
+| Model download fails | Network issues or authentication | Check HF_TOKEN in .env, run `./sync-env.sh`, verify internet connectivity |
+| `HF_TOKEN not passed to containers` | Environment variable not synchronized | Run `./sync-env.sh` to create .env files in model directories |
 
 ### Memory Management
 
