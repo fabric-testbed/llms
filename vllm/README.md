@@ -120,13 +120,16 @@ llms/vllm/
 ├── nginx/
 │   └── multi-model.conf        # NGINX routing configuration
 ├── gpt-oss-20b/
-│   ├── docker-compose.yml      # GPT-OSS-20B vLLM server
+│   ├── docker-compose.yml      # GPT-OSS-20B vLLM server (default)
+│   ├── docker-compose-gpu.yml  # GPT-OSS-20B with dedicated GPU 0
 │   └── chat.template           # Chat template for GPT-OSS models
 ├── gpt-oss-120b/
-│   ├── docker-compose.yml      # GPT-OSS-120B vLLM server
+│   ├── docker-compose.yml      # GPT-OSS-120B vLLM server (default)
+│   ├── docker-compose-gpu.yml  # GPT-OSS-120B with dedicated GPUs 0,1,2
 │   └── chat.template           # Chat template for GPT-OSS models
 └── qwen-30b/
-    ├── docker-compose.yml      # Qwen-30B vLLM server
+    ├── docker-compose.yml      # Qwen-30B vLLM server (default)
+    ├── docker-compose-gpu.yml  # Qwen-30B with dedicated GPUs 1,2
     └── chat.template           # Chat template for Qwen models
 ```
 
@@ -394,6 +397,102 @@ deploy:
           capabilities: [gpu]
 ```
 
+### VM Deployment with Dedicated GPU Allocation
+
+For VM deployments where you need to run multiple models concurrently with dedicated GPU assignments, use the `docker-compose-gpu.yml` files instead of the standard `docker-compose.yml` files.
+
+#### Available Configurations
+
+Each model directory contains a `docker-compose-gpu.yml` with pre-configured GPU assignments:
+
+**gpt-oss-20b/docker-compose-gpu.yml**:
+- GPU Assignment: GPU 0
+- Tensor Parallel Size: 1
+- Memory: ~20GB
+
+**gpt-oss-120b/docker-compose-gpu.yml**:
+- GPU Assignment: GPUs 0, 1, 2
+- Tensor Parallel Size: 3
+- Memory: ~60GB (distributed across 3 GPUs)
+
+**qwen-30b/docker-compose-gpu.yml**:
+- GPU Assignment: GPUs 1, 2
+- Tensor Parallel Size: 2
+- Memory: ~30GB (distributed across 2 GPUs)
+
+#### Deployment Scenarios
+
+The GPU allocations support two non-overlapping deployment scenarios:
+
+**Scenario 1: GPT-OSS-120B alone** (for reasoning-heavy workloads):
+```bash
+cd llms/vllm/gpt-oss-120b
+docker compose -f docker-compose-gpu.yml up -d
+```
+Uses: GPUs 0, 1, 2
+
+**Scenario 2: GPT-OSS-20B + Qwen-30B together** (for diverse workload mix):
+```bash
+cd llms/vllm/gpt-oss-20b
+docker compose -f docker-compose-gpu.yml up -d
+
+cd ../qwen-30b
+docker compose -f docker-compose-gpu.yml up -d
+```
+Uses: GPU 0 (20B model) + GPUs 1, 2 (30B model) - no conflicts
+
+#### When to Use docker-compose-gpu.yml
+
+Use `docker-compose-gpu.yml` when:
+- Running on VMs with multiple GPUs (not DGX Spark with UMA)
+- You need to run multiple models concurrently
+- You want explicit GPU resource isolation between models
+- Running in environments where GPU sharing is not optimal
+
+Use standard `docker-compose.yml` when:
+- Running on DGX Spark with Unified Memory Architecture
+- Running only one model at a time
+- You want dynamic GPU allocation
+
+#### Starting Services with GPU Configs
+
+```bash
+cd llms/vllm
+
+# Sync environment variables first
+./sync-env.sh
+
+# Start NGINX gateway
+docker compose up -d
+
+# Start models with GPU assignment (choose your scenario)
+
+# Scenario 1: 120B model alone
+cd gpt-oss-120b
+docker compose -f docker-compose-gpu.yml up -d
+
+# OR Scenario 2: 20B + 30B models together
+cd gpt-oss-20b
+docker compose -f docker-compose-gpu.yml up -d
+cd ../qwen-30b
+docker compose -f docker-compose-gpu.yml up -d
+```
+
+#### Verifying GPU Allocation
+
+Check that each container is using its assigned GPUs:
+
+```bash
+# View GPU allocation for each container
+docker exec vllm-gpt-oss-120b nvidia-smi
+
+# Check all GPU usage across system
+nvidia-smi
+
+# View which GPUs are assigned to each container
+docker inspect vllm-gpt-oss-120b | grep -A 10 DeviceRequests
+```
+
 ---
 
 ## Usage Examples
@@ -584,6 +683,11 @@ docker compose down
 cd gpt-oss-120b && docker compose down
 cd ../qwen-30b && docker compose down
 cd ../gpt-oss-20b && docker compose down
+
+# If using docker-compose-gpu.yml files
+cd gpt-oss-120b && docker compose -f docker-compose-gpu.yml down
+cd ../qwen-30b && docker compose -f docker-compose-gpu.yml down
+cd ../gpt-oss-20b && docker compose -f docker-compose-gpu.yml down
 
 # Or stop specific services
 docker stop vllm-nginx-proxy
