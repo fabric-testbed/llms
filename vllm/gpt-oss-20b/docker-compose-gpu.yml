@@ -53,9 +53,10 @@ services:
       --model openai/gpt-oss-20b
       --enable-auto-tool-choice
       --tool-call-parser openai
-      --chat-template /root/chat.template
+      --gpu-memory-utilization 0.95
       --tensor-parallel-size 1
       --trust-remote-code
+      --download-dir /root/.cache/huggingface
 
     # Join shared network for nginx
     networks:

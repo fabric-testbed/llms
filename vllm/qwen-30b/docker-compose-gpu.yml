@@ -11,6 +11,7 @@ services:
     environment:
       # DGX Spark optimizations
       - CUDA_MANAGED_FORCE_DEVICE_ALLOC=1
+      - CUDA_VISIBLE_DEVICES=0,1,2
       - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
       - VLLM_LOGGING_LEVEL=${VLLM_LOGGING_LEVEL:-INFO}
       - VLLM_USE_V1=1
@@ -30,7 +31,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ['1', '2']
+              device_ids: ['0', '1', '2']
               capabilities: [gpu]
 
     shm_size: 16gb
@@ -50,12 +51,18 @@ services:
       start_period: 300s  # 5 minutes for model loading
 
     command: >
-      --model Qwen/Qwen3-Coder-30B-A3B-Instruct
+      --model Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8
+      --tensor-parallel-size 2
+      --enable-prefix-caching
+      --max-num-seqs 128
+      --gpu-memory-utilization 0.95
+      --download-dir /root/.cache/huggingface
       --enable-auto-tool-choice
       --tool-call-parser qwen3_coder
       --chat-template /root/chat.template
       --tensor-parallel-size 2
       --trust-remote-code
+      --served-model-name qwen3-coder-30b
 
     # Join shared network for nginx
     networks:

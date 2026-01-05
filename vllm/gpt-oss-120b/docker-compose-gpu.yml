@@ -54,7 +54,7 @@ services:
       --enable-auto-tool-choice
       --tool-call-parser openai
       --chat-template /root/chat.template
-      --tensor-parallel-size 3
+      --tensor-parallel-size 2
       --trust-remote-code
 
     # Join shared network for nginx
