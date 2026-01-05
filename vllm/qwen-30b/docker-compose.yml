@@ -51,14 +51,16 @@ services:
       start_period: 300s  # 5 minutes for model loading
 
     command: >
-      vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct
+      vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8
+      --enable-prefix-caching
+      --max-num-seqs 128
+      --gpu-memory-utilization 0.95
+      --download-dir /root/.cache/huggingface
       --enable-auto-tool-choice
       --tool-call-parser qwen3_coder
       --chat-template /root/chat.template
-      --tensor-parallel-size 1
-      --max-model-len 8192
-      --kv-cache-dtype fp8
       --trust-remote-code
+      --served-model-name qwen3-coder-30b
 
     # Join shared network for nginx
     networks:

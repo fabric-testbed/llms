@@ -52,7 +52,6 @@ services:
 
     command: >
       --model Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8
-      --tensor-parallel-size 2
       --enable-prefix-caching
       --max-num-seqs 128
       --gpu-memory-utilization 0.95
