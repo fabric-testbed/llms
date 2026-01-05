@@ -32,4 +32,3 @@ networks:
   vllm_network:
     name: vllm_network
     driver: bridge
-    external: true  # Use existing network created by model containers

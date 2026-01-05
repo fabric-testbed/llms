@@ -56,7 +56,6 @@ services:
       --tool-call-parser openai
       --chat-template /root/chat.template
       --tensor-parallel-size 1
-      --max-model-len 4096
       --kv-cache-dtype fp8
       --trust-remote-code
 

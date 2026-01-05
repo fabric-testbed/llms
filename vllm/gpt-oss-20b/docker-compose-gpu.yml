@@ -74,3 +74,4 @@ networks:
   vllm_network:
     name: vllm_network
     driver: bridge
+    external: true  # Network created by first model
