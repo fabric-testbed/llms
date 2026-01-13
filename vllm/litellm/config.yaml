@@ -1,0 +1,88 @@
+# LiteLLM Proxy Configuration for vLLM Multi-Model Gateway
+# This config enables unified API access to all vLLM model servers
+
+model_list:
+  # GPT-OSS-120B - Best for reasoning and tool calling
+  - model_name: gpt-oss-120b
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: http://vllm-gpt-oss-120b:8000/v1
+      api_key: "not-used"
+      rpm: 100  # Requests per minute limit
+      tpm: 100000  # Tokens per minute limit
+    model_info:
+      description: "GPT-OSS 120B model for complex reasoning and tool calling"
+      max_tokens: 4096
+
+  # GPT-OSS-20B - Faster, smaller model
+  - model_name: gpt-oss-20b
+    litellm_params:
+      model: openai/gpt-oss-20b
+      api_base: http://vllm-gpt-oss-20b:8000/v1
+      api_key: "not-used"
+      rpm: 150
+      tpm: 150000
+    model_info:
+      description: "GPT-OSS 20B model for faster inference"
+      max_tokens: 4096
+
+  # Qwen-30B - Best for code generation
+  - model_name: qwen-30b
+    litellm_params:
+      model: Qwen/Qwen3-Coder-30B-A3B-Instruct
+      api_base: http://vllm-qwen-30b:8000/v1
+      api_key: "not-used"
+      rpm: 120
+      tpm: 120000
+    model_info:
+      description: "Qwen 30B Coder model optimized for code generation"
+      max_tokens: 8192
+
+# Router settings for load balancing and failover
+router_settings:
+  routing_strategy: simple-shuffle  # Options: simple-shuffle, least-busy, usage-based-routing-v2
+  redis_host: redis
+  redis_port: 6379
+  num_retries: 2  # Retry failed requests
+  retry_after: 5  # Wait 5 seconds before retry
+  timeout: 600  # 10 minute timeout for long-running requests
+  enable_pre_call_checks: true  # Check model health before routing
+  allowed_fails: 3  # Allow 3 failures before marking model as down
+  cooldown_time: 60  # Wait 60 seconds before retrying failed model
+
+# General LiteLLM settings
+litellm_settings:
+  # Caching configuration
+  cache: true
+  cache_type: redis
+
+  # Logging
+  set_verbose: false
+  json_logs: true
+
+  # Request/Response modifications
+  drop_params: true  # Drop params not supported by backend
+  add_function_to_prompt: false
+
+  # Callbacks for monitoring (optional - uncomment if using)
+  # success_callback: ["langfuse"]
+  # failure_callback: ["langfuse"]
+
+  # Cost tracking
+  track_cost_per_model: true
+
+# Optional: General parameters applied to all requests
+general_settings:
+  master_key: ${LITELLM_MASTER_KEY}  # API key for proxy authentication
+  database_url: postgresql://litellm:litellm@postgres:5432/litellm  # Optional DB
+  store_model_in_db: false  # Set to true to persist config in DB
+
+  # Admin UI settings
+  ui_username: admin
+  ui_password: ${LITELLM_UI_PASSWORD:-admin}
+
+  # CORS settings
+  allow_cors: true
+
+  # Max parallel requests
+  max_parallel_requests: 100

@@ -1,0 +1,27 @@
+# Environment files
+.env
+
+# Local data directories (mounted volumes)
+data/
+logs/
+
+# Docker-specific
+.docker/
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+tmp/

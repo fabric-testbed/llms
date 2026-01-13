@@ -1,0 +1,121 @@
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: vllm-litellm-proxy
+    hostname: litellm
+
+    ports:
+      - "${LITELLM_PORT:-4000}:4000"
+
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - litellm_data:/app/data
+      - litellm_logs:/app/logs
+
+    environment:
+      # Authentication
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-1234}
+      - LITELLM_UI_PASSWORD=${LITELLM_UI_PASSWORD:-admin}
+
+      # Database (optional - comment out if not using)
+      - DATABASE_URL=postgresql://litellm:litellm@postgres:5432/litellm
+      - STORE_MODEL_IN_DB=false
+
+      # Redis for caching and state
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+
+      # Logging
+      - LITELLM_LOG=INFO
+
+    command: >
+      --config /app/config.yaml
+      --port 4000
+      --num_workers 4
+      --detailed_debug
+
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+    networks:
+      - vllm_network
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Redis for caching and load balancing state
+  redis:
+    image: redis:7-alpine
+    container_name: vllm-litellm-redis
+    hostname: redis
+
+    ports:
+      - "${LITELLM_REDIS_PORT:-6379}:6379"
+
+    volumes:
+      - redis_data:/data
+
+    networks:
+      - vllm_network
+
+    restart: unless-stopped
+
+    command: redis-server --save 60 1 --loglevel warning --maxmemory 2gb --maxmemory-policy allkeys-lru
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # PostgreSQL for persistent storage (optional)
+  postgres:
+    image: postgres:15-alpine
+    container_name: vllm-litellm-postgres
+    hostname: postgres
+
+    ports:
+      - "${LITELLM_POSTGRES_PORT:-5432}:5432"
+
+    environment:
+      - POSTGRES_DB=litellm
+      - POSTGRES_USER=litellm
+      - POSTGRES_PASSWORD=${LITELLM_POSTGRES_PASSWORD:-litellm}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    networks:
+      - vllm_network
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  litellm_data:
+    driver: local
+  litellm_logs:
+    driver: local
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+
+networks:
+  vllm_network:
+    external: true
