@@ -2,41 +2,19 @@
 # This config enables unified API access to all vLLM model servers
 
 model_list:
-  # GPT-OSS-120B - Best for reasoning and tool calling
-  - model_name: gpt-oss-120b
-    litellm_params:
-      model: openai/gpt-oss-120b
-      api_base: http://vllm-gpt-oss-120b:8000/v1
-      api_key: "not-used"
-      rpm: 100  # Requests per minute limit
-      tpm: 100000  # Tokens per minute limit
-    model_info:
-      description: "GPT-OSS 120B model for complex reasoning and tool calling"
-      max_tokens: 4096
-
   # GPT-OSS-20B - Faster, smaller model
   - model_name: gpt-oss-20b
     litellm_params:
-      model: openai/gpt-oss-20b
+      model: hosted_vllm/gpt-oss-20b
       api_base: http://vllm-gpt-oss-20b:8000/v1
       api_key: "not-used"
       rpm: 150
       tpm: 150000
     model_info:
-      description: "GPT-OSS 20B model for faster inference"
-      max_tokens: 4096
-
-  # Qwen-30B - Best for code generation
-  - model_name: qwen-30b
-    litellm_params:
-      model: Qwen/Qwen3-Coder-30B-A3B-Instruct
-      api_base: http://vllm-qwen-30b:8000/v1
-      api_key: "not-used"
-      rpm: 120
-      tpm: 120000
-    model_info:
-      description: "Qwen 30B Coder model optimized for code generation"
-      max_tokens: 8192
+      description: "GPT-OSS 20B model with Auto-Tool Choice enabled"
+      max_tokens: 131072
+      # Explicitly tell LiteLLM this model supports function calling
+      supports_function_calling: true
 
 # Router settings for load balancing and failover
 router_settings:

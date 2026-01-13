@@ -4,9 +4,6 @@ services:
     container_name: vllm-litellm-proxy
     hostname: litellm
 
-    ports:
-      - "${LITELLM_PORT:-4000}:4000"
-
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - litellm_data:/app/data
@@ -60,9 +57,6 @@ services:
     container_name: vllm-litellm-redis
     hostname: redis
 
-    ports:
-      - "${LITELLM_REDIS_PORT:-6379}:6379"
-
     volumes:
       - redis_data:/data
 
@@ -84,9 +78,6 @@ services:
     image: postgres:15-alpine
     container_name: vllm-litellm-postgres
     hostname: postgres
-
-    ports:
-      - "${LITELLM_POSTGRES_PORT:-5432}:5432"
 
     environment:
       - POSTGRES_DB=litellm
