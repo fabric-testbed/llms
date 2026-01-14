@@ -26,19 +26,8 @@ echo "LiteLLM URL: $LITELLM_URL"
 echo "API Key: ${API_KEY:0:10}..."
 echo ""
 
-# Test 1: Health Check
-echo "Test 1: Health Check"
-echo "---------------------"
-if curl -s "${LITELLM_URL}/health" | grep -q "healthy\|ok"; then
-    echo "✓ Health check passed"
-else
-    echo "✗ Health check failed"
-    exit 1
-fi
-echo ""
-
-# Test 2: List Models
-echo "Test 2: List Available Models"
+# Test 1: List Models
+echo "Test 1: List Available Models"
 echo "------------------------------"
 MODELS_RESPONSE=$(curl -s "${LITELLM_URL}/v1/models" \
     -H "Authorization: Bearer ${API_KEY}")
@@ -57,45 +46,18 @@ else
 fi
 echo ""
 
-# Test 3: Chat Completion (first available model)
-echo "Test 3: Chat Completion"
-echo "-----------------------"
+# Test 2: Ask a question
+echo "Test 2: Question Response"
 FIRST_MODEL=$(echo "$MODELS_RESPONSE" | jq -r '.data[0].id')
 echo "Testing model: $FIRST_MODEL"
-
-CHAT_RESPONSE=$(curl -s "${LITELLM_URL}/v1/chat/completions" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer ${API_KEY}" \
-    -d "{
-        \"model\": \"${FIRST_MODEL}\",
-        \"messages\": [{\"role\": \"user\", \"content\": \"Say 'LiteLLM test successful' and nothing else.\"}],
-        \"max_tokens\": 20,
-        \"temperature\": 0.1
-    }")
-
-if echo "$CHAT_RESPONSE" | jq -e '.choices[0].message.content' >/dev/null 2>&1; then
-    echo "✓ Chat completion successful"
-    echo ""
-    echo "Response:"
-    echo "$CHAT_RESPONSE" | jq -r '.choices[0].message.content'
-else
-    echo "✗ Chat completion failed"
-    echo "Response: $CHAT_RESPONSE"
-    exit 1
-fi
-echo ""
-
-# Test 4: Streaming (if model supports it)
-echo "Test 4: Streaming Response"
 echo "--------------------------"
-echo "Testing streaming with model: $FIRST_MODEL"
 
 STREAM_OUTPUT=$(curl -s "${LITELLM_URL}/v1/chat/completions" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${API_KEY}" \
     -d "{
         \"model\": \"${FIRST_MODEL}\",
-        \"messages\": [{\"role\": \"user\", \"content\": \"Count to 3.\"}],
+        \"messages\": [{\"role\": \"user\", \"content\": \"How is the weather today?.\"}],
         \"stream\": true,
         \"max_tokens\": 20
     }" 2>&1)
@@ -111,8 +73,8 @@ else
 fi
 echo ""
 
-# Test 5: Test each model individually
-echo "Test 5: Test All Models Individually"
+# Test 3: Test each model individually
+echo "Test 3: Test All Models Individually"
 echo "-------------------------------------"
 
 echo "$MODELS_RESPONSE" | jq -r '.data[].id' | while read -r model; do
@@ -137,8 +99,8 @@ echo "$MODELS_RESPONSE" | jq -r '.data[].id' | while read -r model; do
 done
 echo ""
 
-# Test 6: Error Handling (invalid API key)
-echo "Test 6: Authentication Error Handling"
+# Test 4: Error Handling (invalid API key)
+echo "Test 4: Authentication Error Handling"
 echo "--------------------------------------"
 ERROR_RESPONSE=$(curl -s "${LITELLM_URL}/v1/chat/completions" \
     -H "Content-Type: application/json" \

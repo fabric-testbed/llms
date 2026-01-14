@@ -40,13 +40,15 @@ if [ -z "$LITELLM_MASTER_KEY" ] || [ "$LITELLM_MASTER_KEY" = "sk-1234-change-thi
     fi
 fi
 
-# Check if vllm_network exists
+# Create vllm_network if it doesn't exist
 if ! docker network inspect vllm_network >/dev/null 2>&1; then
-    echo "Error: vllm_network does not exist"
-    echo "Please start at least one vLLM model server first:"
-    echo "  cd $VLLM_DIR/gpt-oss-120b"
-    echo "  docker compose up -d"
-    exit 1
+    echo ""
+    echo "Creating vllm_network..."
+    docker network create vllm_network
+    echo "  ✓ Network created"
+else
+    echo ""
+    echo "  ✓ Network vllm_network already exists"
 fi
 
 # Check if vLLM model servers are running

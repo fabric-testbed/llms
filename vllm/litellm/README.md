@@ -62,10 +62,10 @@ LiteLLM acts as a unified proxy layer for your vLLM model servers, providing:
 
 ## Prerequisites
 
-- **vLLM Model Servers**: At least one vLLM model container running
-- **Docker Network**: `vllm_network` must exist (created by vLLM model servers)
+- **Docker**: Docker Engine 20.10+ with Compose v2.0+
+- **Docker Network**: `vllm_network` (will be created automatically by quick-start script)
 - **Environment Variables**: `.env` file configured in parent `llms/vllm/` directory
-- **Docker Compose**: v2.0+ installed
+- **vLLM Model Servers**: Optional - at least one vLLM model to serve requests (can be started before or after LiteLLM)
 
 ### Required Environment Variables
 
@@ -85,9 +85,23 @@ LITELLM_POSTGRES_PASSWORD=litellm
 
 ## Quick Start
 
-### Step 1: Ensure vLLM Models are Running
+### Step 1: Create Docker Network
 
-LiteLLM requires at least one vLLM model server to be active:
+Create the shared Docker network that all vLLM services will use:
+
+```bash
+# Create the network if it doesn't exist
+docker network create vllm_network
+
+# Verify network was created
+docker network ls | grep vllm_network
+```
+
+**Note**: The quick-start script will create this network automatically if it doesn't exist.
+
+### Step 2: Ensure vLLM Models are Running (Optional)
+
+LiteLLM can start without vLLM models running, but you'll need at least one model to serve requests:
 
 ```bash
 # Check running vLLM containers
@@ -98,7 +112,7 @@ cd ../gpt-oss-120b
 docker compose up -d
 ```
 
-### Step 2: Configure Environment Variables
+### Step 3: Configure Environment Variables
 
 If you haven't already, configure your environment:
 
@@ -110,7 +124,7 @@ nano .env  # Edit and set LITELLM_MASTER_KEY
 
 **Important**: Change `LITELLM_MASTER_KEY` from the default value!
 
-### Step 3: Start LiteLLM
+### Step 4: Start LiteLLM
 
 Use the quick-start script for automated deployment:
 
@@ -119,14 +133,18 @@ cd litellm
 ./quick-start.sh
 ```
 
-Or manually:
+Or manually with explicit network creation:
 
 ```bash
+# Create network first (if not already created)
+docker network create vllm_network
+
+# Start LiteLLM services
 cd litellm
 docker compose up -d
 ```
 
-### Step 4: Verify Deployment
+### Step 5: Verify Deployment
 
 ```bash
 # Check service health
@@ -493,7 +511,7 @@ docker compose up -d --force-recreate litellm
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `Network vllm_network not found` | vLLM model servers not started | Start at least one vLLM model: `cd ../gpt-oss-120b && docker compose up -d` |
+| `Network vllm_network not found` | Network not created | Create network: `docker network create vllm_network` then restart LiteLLM |
 | `Connection refused` from LiteLLM | Model container hostname mismatch | Verify model container names match `config.yaml` api_base URLs |
 | `401 Unauthorized` | Invalid API key | Check `Authorization: Bearer` header matches `LITELLM_MASTER_KEY` |
 | `No models available` | All vLLM servers down | Verify vLLM containers are running: `docker ps | grep vllm` |

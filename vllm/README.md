@@ -7,7 +7,7 @@
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
+- [Manual Deployment](#manual-deployment)
 - [Configuration](#configuration)
 - [Usage Examples](#usage-examples)
 - [Management](#management)
@@ -101,6 +101,22 @@ All containers join the `vllm_network` bridge network, allowing:
 - NGINX to proxy requests to backend vLLM servers
 - Shared HuggingFace model cache across containers
 
+**Note**: The `vllm_network` is created automatically when you start the first model server. For explicit control, you can create it manually:
+```bash
+docker network create vllm_network
+```
+
+### Optional Components
+
+**LiteLLM Proxy** (`litellm/`): Provides a unified API gateway with advanced features:
+- Load balancing across multiple model instances
+- Request caching with Redis
+- Cost tracking and analytics
+- Rate limiting per API key
+- OpenAI-compatible API for all models
+
+See `litellm/README.md` for setup instructions.
+
 ### File Structure
 
 ```
@@ -108,8 +124,6 @@ llms/vllm/
 ├── README.md                    # This file
 ├── docker-compose.yml           # NGINX gateway configuration
 ├── certs.sh                     # SSL certificate generation script
-├── quick-start.sh               # Interactive deployment script
-├── shutdown.sh                  # Graceful shutdown script
 ├── test-endpoints.sh            # Endpoint testing script
 ├── sync-env.sh                  # Sync environment variables to model directories
 ├── .env.example                 # Environment variable template
@@ -127,17 +141,37 @@ llms/vllm/
 │   ├── docker-compose.yml      # GPT-OSS-120B vLLM server (default)
 │   ├── docker-compose-gpu.yml  # GPT-OSS-120B with dedicated GPUs 0,1,2
 │   └── chat.template           # Chat template for GPT-OSS models
-└── qwen-30b/
-    ├── docker-compose.yml      # Qwen-30B vLLM server (default)
-    ├── docker-compose-gpu.yml  # Qwen-30B with dedicated GPUs 1,2
-    └── chat.template           # Chat template for Qwen models
+├── qwen-30b/
+│   ├── docker-compose.yml      # Qwen-30B vLLM server (default)
+│   ├── docker-compose-gpu.yml  # Qwen-30B with dedicated GPUs 1,2
+│   └── chat.template           # Chat template for Qwen models
+└── litellm/                    # Optional: Advanced API gateway
+    ├── README.md               # LiteLLM documentation
+    ├── docker-compose.yml      # LiteLLM proxy + Redis + PostgreSQL
+    ├── config.yaml             # Model routing and caching configuration
+    ├── quick-start.sh          # LiteLLM deployment script
+    └── test-litellm.sh         # LiteLLM endpoint tests
 ```
 
 ---
 
-## Quick Start
+## Manual Deployment
 
-### Step 1. Generate SSL Certificates
+This section provides step-by-step manual deployment instructions for DGX Spark systems.
+
+### Step 1. Create Docker Network
+
+Create the shared Docker network that all vLLM services will use:
+
+```bash
+# Create the network
+docker network create vllm_network
+
+# Verify network was created
+docker network ls | grep vllm_network
+```
+
+### Step 2. Generate SSL Certificates
 
 Create self-signed certificates for HTTPS access:
 
@@ -155,7 +189,7 @@ cp /path/to/your/cert.pem ssl/public.pem
 cp /path/to/your/key.pem ssl/private.pem
 ```
 
-### Step 2. Configure HuggingFace Authentication
+### Step 3. Configure HuggingFace Authentication
 
 Create a `.env` file from the template and set your HuggingFace token:
 
@@ -179,61 +213,99 @@ NGINX_HTTPS_PORT=443
 NGINX_HTTP_PORT=80
 ```
 
-**Important**: The `sync-env.sh` script will automatically propagate these variables to each model directory. This happens automatically when you run `quick-start.sh`, or you can run it manually:
+### Step 4. Sync Environment Variables
+
+Propagate environment variables to each model directory:
 
 ```bash
+cd llms/vllm
 ./sync-env.sh
 ```
 
 This creates synchronized `.env` files in each model directory (`gpt-oss-120b/.env`, `qwen-30b/.env`, etc.) that are auto-generated and should not be edited directly.
 
-### Step 3. Start Model Servers
+### Step 5. Start Model Servers
 
-Launch the models you want to deploy. You can start all three or select individual models based on memory requirements.
+Launch the models you want to deploy. Each model directory contains two docker-compose files:
+- **`docker-compose.yml`**: Default configuration for DGX Spark (uses all available GPUs)
+- **`docker-compose-gpu.yml`**: Explicit GPU assignment for multi-GPU systems
 
-**Important**: Make sure you've run `sync-env.sh` first (or use `quick-start.sh` which does this automatically).
+**DGX Spark Deployment (Recommended)**
 
-**Option A: Start all models** (requires ~110GB+ GPU memory):
+Use the default `docker-compose.yml` which leverages DGX Spark's unified memory architecture:
+
 ```bash
 cd llms/vllm
 
-# Sync environment variables first
-./sync-env.sh
+# Option A: Start all models (requires ~110GB+ GPU memory)
+cd gpt-oss-20b && docker compose up -d && cd ..
+cd gpt-oss-120b && docker compose up -d && cd ..
+cd qwen-30b && docker compose up -d && cd ..
 
-# Start models
-cd gpt-oss-20b && docker compose up -d
-cd ../gpt-oss-120b && docker compose up -d
-cd ../qwen-30b && docker compose up -d
-```
-
-**Option B: Start specific models**:
-```bash
-cd llms/vllm
-
-# Sync environment variables first
-./sync-env.sh
-
-# Start only GPT-OSS-120B (recommended for most use cases)
+# Option B: Start specific model (e.g., GPT-OSS-120B only - recommended)
 cd gpt-oss-120b
 docker compose up -d
+cd ..
 ```
 
-### Step 4. Start NGINX Gateway
+**Multi-GPU Systems with Explicit GPU Assignment**
 
-After model servers are running:
+For systems where you want to assign specific GPUs to each model, use `docker-compose-gpu.yml`:
+
+```bash
+cd llms/vllm
+
+# Start GPT-OSS-120B on GPUs 0,1,2 with tensor parallelism
+cd gpt-oss-120b
+docker compose -f docker-compose-gpu.yml up -d
+cd ..
+
+# Start Qwen-30B on GPUs 1,2
+cd qwen-30b
+docker compose -f docker-compose-gpu.yml up -d
+cd ..
+
+# Start GPT-OSS-20B on GPU 0
+cd gpt-oss-20b
+docker compose -f docker-compose-gpu.yml up -d
+cd ..
+```
+
+**Monitor Model Loading**
+
+Models take 2-5 minutes to load into memory. Monitor progress:
+
+```bash
+# Watch GPT-OSS-120B loading
+docker logs -f vllm-gpt-oss-120b
+
+# Check GPU memory usage
+nvidia-smi
+
+# Wait for model to be ready (shows "Application startup complete" when ready)
+```
+
+### Step 6. Start NGINX Gateway
+
+After at least one model server is running and healthy:
 
 ```bash
 cd llms/vllm
 docker compose up -d
 ```
 
-### Step 5. Verify Deployment
+This starts the NGINX reverse proxy that routes requests to your model servers.
+
+### Step 7. Verify Deployment
 
 Check all services are healthy:
 
 ```bash
 # Check all running containers
 docker ps
+
+# Verify containers are healthy (STATUS column should show "healthy")
+docker ps --filter "name=vllm-"
 
 # Check NGINX logs
 docker logs vllm-nginx-proxy
@@ -244,47 +316,114 @@ curl -k https://localhost/health
 
 Expected output: `healthy`
 
-### Step 6. Test Model Inference
+### Step 8. Test Model Inference
 
 Test the gateway with a sample request:
 
 ```bash
-# Quick test all endpoints
+# Test using the provided script
+cd llms/vllm
 ./test-endpoints.sh
 
 # Or manually test GPT-OSS-120B
 curl -k https://localhost/gpt-oss-120b/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "openai/gpt-oss-120b",
+    "model": "gpt-oss-120b",
     "messages": [{"role": "user", "content": "Explain quantum computing in one sentence."}],
     "max_tokens": 100,
     "temperature": 0.7
   }'
 ```
 
-### Step 7. Shutdown (When Done)
+### Step 9. Shutdown (When Done)
 
-Gracefully stop all services:
+Gracefully stop all services in reverse order:
 
 ```bash
-# Graceful shutdown (recommended)
-./shutdown.sh
+cd llms/vllm
 
-# Force shutdown (removes containers)
-./shutdown.sh --force
+# Stop NGINX gateway first
+docker compose down
 
-# Remove everything including cached models (WARNING: requires re-download)
-./shutdown.sh --force --remove-volumes
+# Stop model servers
+cd gpt-oss-120b && docker compose down && cd ..
+cd gpt-oss-120b && docker compose down && cd ..
+cd qwen-30b && docker compose down && cd ..
+
+# Optional: Remove network (only if no other services are using it)
+docker network rm vllm_network
+
+# Optional: Remove volumes to free disk space (WARNING: deletes cached models)
+docker volume rm gpt-oss-120b_huggingface_cache
+docker volume rm gpt-oss-20b_huggingface_cache
+docker volume rm qwen-30b_huggingface_cache
 ```
 
 ---
 
 ## Configuration
 
+### Docker Compose Files
+
+Each model directory contains two docker-compose files:
+
+#### docker-compose.yml (Default - DGX Spark)
+
+The default configuration for DGX Spark systems:
+- Uses all available GPUs (`count: all`)
+- Leverages DGX Spark's Unified Memory Architecture (UMA)
+- Recommended for single-system deployments
+- Simplest configuration
+
+Example GPU configuration:
+```yaml
+deploy:
+  resources:
+    reservations:
+      devices:
+        - driver: nvidia
+          count: all  # Use all available GPUs
+          capabilities: [gpu]
+```
+
+#### docker-compose-gpu.yml (Explicit GPU Assignment)
+
+For multi-GPU systems requiring explicit GPU assignment:
+- Assigns specific GPU IDs to each model
+- Useful for isolating workloads
+- Required when running multiple models with different GPU requirements
+- Uses tensor parallelism for models across multiple GPUs
+
+Example GPU configuration:
+```yaml
+deploy:
+  resources:
+    reservations:
+      devices:
+        - driver: nvidia
+          device_ids: ['0', '1', '2']  # Specific GPUs
+          capabilities: [gpu]
+```
+
+**When to use docker-compose-gpu.yml:**
+- Running multiple models on separate GPUs
+- Need guaranteed GPU isolation between models
+- Using tensor parallelism with specific GPU topology
+- Debugging GPU-specific issues
+
+**Usage:**
+```bash
+# Default (DGX Spark)
+docker compose up -d
+
+# Explicit GPU assignment
+docker compose -f docker-compose-gpu.yml up -d
+```
+
 ### Model-Specific Settings
 
-Each model directory contains a `docker-compose.yml` with model-specific configuration:
+Each model directory contains model-specific configuration:
 
 #### GPT-OSS-120B Configuration
 
@@ -670,28 +809,37 @@ docker exec vllm-gpt-oss-120b nvidia-smi
 
 ### Stop Services
 
+Stop services in reverse order (NGINX first, then models):
+
 ```bash
-# Recommended: Use the shutdown script for graceful shutdown
-./shutdown.sh
-
-# Force shutdown (removes containers)
-./shutdown.sh --force
-
-# Manual shutdown if needed
 cd llms/vllm
+
+# Stop NGINX gateway first
 docker compose down
-cd gpt-oss-120b && docker compose down
-cd ../qwen-30b && docker compose down
-cd ../gpt-oss-20b && docker compose down
+
+# Stop model servers (default docker-compose.yml)
+cd gpt-oss-120b && docker compose down && cd ..
+cd qwen-30b && docker compose down && cd ..
+cd gpt-oss-20b && docker compose down && cd ..
 
 # If using docker-compose-gpu.yml files
-cd gpt-oss-120b && docker compose -f docker-compose-gpu.yml down
-cd ../qwen-30b && docker compose -f docker-compose-gpu.yml down
-cd ../gpt-oss-20b && docker compose -f docker-compose-gpu.yml down
+cd gpt-oss-120b && docker compose -f docker-compose-gpu.yml down && cd ..
+cd qwen-30b && docker compose -f docker-compose-gpu.yml down && cd ..
+cd gpt-oss-20b && docker compose -f docker-compose-gpu.yml down && cd ..
 
-# Or stop specific services
+# Or stop specific services without removing containers
 docker stop vllm-nginx-proxy
 docker stop vllm-gpt-oss-120b
+docker stop vllm-qwen-30b
+docker stop vllm-gpt-oss-20b
+
+# Optional: Remove network (only if no other services using it)
+docker network rm vllm_network
+
+# Optional: Remove volumes to free disk space (WARNING: deletes cached models)
+docker volume rm gpt-oss-120b_huggingface_cache
+docker volume rm gpt-oss-20b_huggingface_cache
+docker volume rm qwen-30b_huggingface_cache
 ```
 
 ### Restart Services
@@ -764,7 +912,7 @@ cd .. && docker compose restart
 | `502 Bad Gateway` from NGINX | Backend vLLM server not running | Check `docker ps`, verify model container is running and healthy |
 | `504 Gateway Timeout` | Model loading or inference taking too long | Increase NGINX timeout in `multi-model.conf`, check vLLM logs for errors |
 | `CUDA Out of Memory` | Multiple large models exceeding GPU capacity | Stop some models, reduce `--max-model-len`, or use `--kv-cache-dtype fp8` |
-| `Network vllm_network not found` | Model containers not started first | Start at least one model container before starting NGINX |
+| `Network vllm_network not found` | Network not created | Create network: `docker network create vllm_network` |
 | `Cannot access gated repo` | HuggingFace token invalid or missing | Run `./sync-env.sh` to propagate HF_TOKEN, verify token in .env file |
 | Container fails to start | Port already in use | Change port mapping in docker-compose.yml or stop conflicting service |
 | Model download fails | Network issues or authentication | Check HF_TOKEN in .env, run `./sync-env.sh`, verify internet connectivity |
