@@ -10,6 +10,7 @@
 - [Configuration](#configuration)
 - [Usage Examples](#usage-examples)
 - [Advanced Features](#advanced-features)
+  - [Using Claude SDK with Local OSS Models](#using-claude-sdk-with-local-oss-models)
 - [Management](#management)
 - [Troubleshooting](#troubleshooting)
 
@@ -423,6 +424,140 @@ litellm_settings:
   cache_kwargs:
     ttl: 3600  # Cache for 1 hour (seconds)
 ```
+
+### Using Claude SDK with Local OSS Models
+
+LiteLLM can redirect requests from applications using the Claude SDK (Anthropic) to your local vLLM models. This allows you to use tools like **Claude Code**, **Cursor**, or any Anthropic SDK-based application with your self-hosted models.
+
+#### How It Works
+
+LiteLLM uses model name aliasing: when an application requests a specific model name (e.g., `claude-3-5-sonnet-20241022`), LiteLLM intercepts the request and routes it to your local vLLM backend instead.
+
+#### Configuration
+
+Add model aliases to `config.yaml` that match the exact model names your SDK/application sends:
+
+```yaml
+model_list:
+  # ... your existing models ...
+
+  # Claude Sonnet → GPT-OSS-120B (for complex reasoning tasks)
+  - model_name: claude-3-5-sonnet-20241022
+    litellm_params:
+      model: hosted_vllm/gpt-oss-120b
+      api_base: http://vllm-gpt-oss-120b:8000/v1
+      api_key: "not-used"
+
+  # Claude Sonnet (latest) → GPT-OSS-120B
+  - model_name: claude-sonnet-4-20250514
+    litellm_params:
+      model: hosted_vllm/gpt-oss-120b
+      api_base: http://vllm-gpt-oss-120b:8000/v1
+      api_key: "not-used"
+
+  # Claude Haiku → GPT-OSS-20B (for faster, simpler tasks)
+  - model_name: claude-haiku-4-5-20251001
+    litellm_params:
+      model: hosted_vllm/gpt-oss-20b
+      api_base: http://vllm-gpt-oss-20b:8000/v1
+      api_key: "not-used"
+
+  # Claude Opus → GPT-OSS-120B (for most capable tasks)
+  - model_name: claude-opus-4-5-20251101
+    litellm_params:
+      model: hosted_vllm/gpt-oss-120b
+      api_base: http://vllm-gpt-oss-120b:8000/v1
+      api_key: "not-used"
+```
+
+#### Setting Up Claude Code with LiteLLM
+
+1. **Configure model aliases** in `config.yaml` as shown above
+
+2. **Restart LiteLLM** to apply changes:
+   ```bash
+   docker compose restart litellm
+   ```
+
+3. **Configure Claude Code** to use LiteLLM as the API endpoint:
+   ```bash
+   # Set environment variables for Claude Code
+   export ANTHROPIC_BASE_URL="https://localhost/v1"  # Via NGINX with HTTPS
+   # Or directly to LiteLLM:
+   export ANTHROPIC_BASE_URL="http://localhost:4000/v1"
+
+   # Use your LiteLLM master key as the API key
+   export ANTHROPIC_API_KEY="$LITELLM_MASTER_KEY"
+   ```
+
+4. **For self-signed certificates** (development), you may need to disable SSL verification:
+   ```bash
+   export NODE_TLS_REJECT_UNAUTHORIZED=0  # For Node.js-based tools
+   ```
+
+#### Example: Using Anthropic Python SDK
+
+```python
+import anthropic
+import os
+
+# Point to LiteLLM instead of Anthropic's API
+client = anthropic.Anthropic(
+    base_url="http://localhost:4000/v1",  # LiteLLM endpoint
+    api_key=os.environ.get("LITELLM_MASTER_KEY"),
+)
+
+# Request uses Claude model name, but LiteLLM routes to local vLLM
+response = client.messages.create(
+    model="claude-3-5-sonnet-20241022",  # This gets routed to gpt-oss-120b
+    max_tokens=1024,
+    messages=[
+        {"role": "user", "content": "Explain quantum computing briefly."}
+    ]
+)
+
+print(response.content[0].text)
+```
+
+#### Common Model Mappings
+
+| Claude Model Name | Recommended Local Model | Use Case |
+|-------------------|------------------------|----------|
+| `claude-3-5-sonnet-20241022` | `gpt-oss-120b` | Complex reasoning, code generation |
+| `claude-sonnet-4-20250514` | `gpt-oss-120b` | General purpose, balanced |
+| `claude-haiku-4-5-20251001` | `gpt-oss-20b` | Fast responses, simple tasks |
+| `claude-opus-4-5-20251101` | `gpt-oss-120b` | Most capable tasks |
+
+#### Troubleshooting Claude SDK Integration
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| `Model not found` | Model name mismatch | Ensure `model_name` in config.yaml exactly matches what the SDK sends |
+| `401 Unauthorized` | Wrong API key | Use `LITELLM_MASTER_KEY` as `ANTHROPIC_API_KEY` |
+| `Connection refused` | Wrong base URL | Verify `ANTHROPIC_BASE_URL` points to LiteLLM (port 4000) or NGINX (port 443) |
+| SSL certificate errors | Self-signed cert | Use `NODE_TLS_REJECT_UNAUTHORIZED=0` or configure trusted certs |
+| Response format errors | API incompatibility | Some advanced Claude features may not be supported by OSS models |
+
+#### Verifying the Setup
+
+Test that requests are being routed correctly:
+
+```bash
+# Check LiteLLM logs to see incoming requests
+docker logs vllm-litellm-proxy -f
+
+# Make a test request with Claude model name
+curl http://localhost:4000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+  -d '{
+    "model": "claude-3-5-sonnet-20241022",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "max_tokens": 50
+  }'
+```
+
+You should see in the logs that the request is routed to `gpt-oss-120b` (or whichever model you configured).
 
 ---
 

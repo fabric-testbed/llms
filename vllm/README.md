@@ -1,6 +1,6 @@
-# Multi-Model vLLM Gateway with NGINX
+# Multi-Model vLLM Gateway with LiteLLM and NGINX
 
-> Deploy multiple vLLM model servers behind a unified HTTPS gateway with NVIDIA DGX Spark
+> Deploy multiple vLLM model servers behind a unified HTTPS gateway with LiteLLM routing on NVIDIA DGX Spark
 
 ## Table of Contents
 
@@ -19,25 +19,32 @@
 
 ### What is this?
 
-This setup provides a production-ready multi-model inference gateway that runs multiple vLLM model servers behind an NGINX reverse proxy. Each model runs in its own container with dedicated resources, while NGINX provides:
+This setup provides a production-ready multi-model inference gateway that runs multiple vLLM model servers with LiteLLM as the model routing and management layer, behind an NGINX reverse proxy for HTTPS termination. Each model runs in its own container with dedicated resources:
 
-- **Unified HTTPS endpoint** with self-signed certificates
-- **Path-based routing** to different models (`/gpt-oss-20b`, `/gpt-oss-120b`, `/qwen-30b`)
-- **Load balancing** with connection keepalive
-- **Health checks** and monitoring
+- **NGINX**: HTTPS termination and SSL/TLS certificates
+- **LiteLLM**: Model routing, load balancing, caching, cost tracking, and API management
+- **vLLM**: High-performance model inference servers
+
+Key features:
+- **Unified HTTPS endpoint** with SSL/TLS certificates via NGINX
+- **Intelligent model routing** via LiteLLM to different models (`gpt-oss-20b`, `gpt-oss-120b`, `qwen-30b`)
+- **Load balancing** across multiple model instances
+- **Request caching** with Redis for repeated queries
+- **Cost tracking** and rate limiting per API key
+- **Admin UI** for monitoring and configuration
 - **Streaming optimization** for real-time inference
 
 ### What you'll accomplish
 
 - Deploy multiple LLM inference servers concurrently on DGX Spark
 - Configure HTTPS access with SSL/TLS certificates
-- Route requests to different models through a single gateway endpoint
-- Monitor and manage multiple model servers from a unified interface
+- Route requests to different models through LiteLLM's unified API
+- Monitor and manage multiple model servers from LiteLLM's Admin UI
 
 ### What to know before starting
 
 - Experience with Docker Compose for multi-container applications
-- Understanding of NGINX reverse proxy configuration
+- Understanding of reverse proxy and API gateway concepts
 - Familiarity with OpenAI-compatible API endpoints
 - Knowledge of SSL/TLS certificates (self-signed and production)
 - Experience with environment variable configuration
@@ -77,28 +84,38 @@ DGX Spark's 128GB unified memory allows running 1-2 large models or 2-3 smaller 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     NGINX Gateway                           │
-│  HTTPS (443) / HTTP (80) → Redirect to HTTPS               │
-│  - /gpt-oss-20b/   → vllm-gpt-oss-20b:8000                 │
-│  - /gpt-oss-120b/  → vllm-gpt-oss-120b:8000                │
-│  - /qwen-30b/      → vllm-qwen-30b:8000                     │
-└─────────────────────────────────────────────────────────────┘
-                            │
-        ┌───────────────────┼───────────────────┐
-        │                   │                   │
-┌───────▼──────┐  ┌─────────▼────────┐  ┌──────▼────────┐
-│ vLLM Server  │  │  vLLM Server     │  │ vLLM Server   │
-│ GPT-OSS-20B  │  │  GPT-OSS-120B    │  │  Qwen-30B     │
-│ Port: 8001   │  │  Port: 8002      │  │  Port: 8003   │
-│ Container:   │  │  Container:      │  │  Container:   │
-│ GPU access   │  │  GPU access      │  │  GPU access   │
-└──────────────┘  └──────────────────┘  └───────────────┘
+│  HTTPS (443) / HTTP (80)                                    │
+│  - SSL/TLS termination                                      │
+│  - Proxies all requests to LiteLLM                          │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  LiteLLM Proxy (Port 4000)                  │
+│  - Model routing (gpt-oss-20b, gpt-oss-120b, qwen-30b)     │
+│  - Load balancing across instances                          │
+│  - Request caching (Redis)                                  │
+│  - Cost tracking (PostgreSQL)                               │
+│  - Rate limiting & API key management                       │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+┌───────▼──────┐  ┌──────────▼─────────┐  ┌──────▼────────┐
+│ vLLM Server  │  │  vLLM Server       │  │ vLLM Server   │
+│ GPT-OSS-20B  │  │  GPT-OSS-120B      │  │  Qwen-30B     │
+│ Port: 8001   │  │  Port: 8002        │  │  Port: 8003   │
+│ Container:   │  │  Container:        │  │  Container:   │
+│ GPU access   │  │  GPU access        │  │  GPU access   │
+└──────────────┘  └────────────────────┘  └───────────────┘
 ```
 
 ### Network Architecture
 
 All containers join the `vllm_network` bridge network, allowing:
 - Inter-container communication by hostname
-- NGINX to proxy requests to backend vLLM servers
+- NGINX to proxy requests to LiteLLM
+- LiteLLM to route requests to backend vLLM servers
 - Shared HuggingFace model cache across containers
 
 **Note**: The `vllm_network` is created automatically when you start the first model server. For explicit control, you can create it manually:
@@ -106,16 +123,17 @@ All containers join the `vllm_network` bridge network, allowing:
 docker network create vllm_network
 ```
 
-### Optional Components
+### Core Components
 
-**LiteLLM Proxy** (`litellm/`): Provides a unified API gateway with advanced features:
-- Load balancing across multiple model instances
-- Request caching with Redis
-- Cost tracking and analytics
-- Rate limiting per API key
-- OpenAI-compatible API for all models
+**LiteLLM Proxy** (`litellm/`): The central API gateway that provides:
+- **Model routing**: Routes requests to appropriate vLLM backend based on model name
+- **Load balancing**: Distributes requests across multiple model instances
+- **Request caching**: Redis-based caching for repeated queries
+- **Cost tracking**: PostgreSQL-based analytics and usage monitoring
+- **Rate limiting**: Per API key rate limiting
+- **Admin UI**: Web-based dashboard for monitoring and configuration
 
-See `litellm/README.md` for setup instructions.
+See `litellm/README.md` for detailed configuration options.
 
 ### File Structure
 
@@ -132,7 +150,7 @@ llms/vllm/
 │   ├── public.pem              # Self-signed certificate
 │   └── private.pem             # Private key
 ├── nginx/
-│   └── multi-model.conf        # NGINX routing configuration
+│   └── multi-model.conf        # NGINX config (proxies to LiteLLM)
 ├── gpt-oss-20b/
 │   ├── docker-compose.yml      # GPT-OSS-20B vLLM server (default)
 │   ├── docker-compose-gpu.yml  # GPT-OSS-20B with dedicated GPU 0
@@ -145,7 +163,7 @@ llms/vllm/
 │   ├── docker-compose.yml      # Qwen-30B vLLM server (default)
 │   ├── docker-compose-gpu.yml  # Qwen-30B with dedicated GPUs 1,2
 │   └── chat.template           # Chat template for Qwen models
-└── litellm/                    # Optional: Advanced API gateway
+└── litellm/                    # LiteLLM API gateway (handles model routing)
     ├── README.md               # LiteLLM documentation
     ├── docker-compose.yml      # LiteLLM proxy + Redis + PostgreSQL
     ├── config.yaml             # Model routing and caching configuration
@@ -285,18 +303,32 @@ nvidia-smi
 # Wait for model to be ready (shows "Application startup complete" when ready)
 ```
 
-### Step 6. Start NGINX Gateway
+### Step 6. Start LiteLLM Gateway
 
-After at least one model server is running and healthy:
+After at least one model server is running and healthy, start LiteLLM:
+
+```bash
+cd llms/vllm/litellm
+./quick-start.sh
+
+# Or manually:
+docker compose up -d
+```
+
+This starts the LiteLLM proxy that routes requests to your model servers.
+
+### Step 7. Start NGINX Gateway
+
+After LiteLLM is running, start the NGINX reverse proxy:
 
 ```bash
 cd llms/vllm
 docker compose up -d
 ```
 
-This starts the NGINX reverse proxy that routes requests to your model servers.
+This starts NGINX which provides HTTPS termination and proxies all requests to LiteLLM.
 
-### Step 7. Verify Deployment
+### Step 8. Verify Deployment
 
 Check all services are healthy:
 
@@ -310,13 +342,16 @@ docker ps --filter "name=vllm-"
 # Check NGINX logs
 docker logs vllm-nginx-proxy
 
-# Verify health endpoint
+# Verify health endpoint via NGINX
 curl -k https://localhost/health
+
+# Verify LiteLLM directly
+curl http://localhost:4000/health
 ```
 
 Expected output: `healthy`
 
-### Step 8. Test Model Inference
+### Step 9. Test Model Inference
 
 Test the gateway with a sample request:
 
@@ -325,9 +360,10 @@ Test the gateway with a sample request:
 cd llms/vllm
 ./test-endpoints.sh
 
-# Or manually test GPT-OSS-120B
-curl -k https://localhost/gpt-oss-120b/v1/chat/completions \
+# Or manually test GPT-OSS-120B via HTTPS (through NGINX → LiteLLM)
+curl -k https://localhost/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -d '{
     "model": "gpt-oss-120b",
     "messages": [{"role": "user", "content": "Explain quantum computing in one sentence."}],
@@ -336,7 +372,7 @@ curl -k https://localhost/gpt-oss-120b/v1/chat/completions \
   }'
 ```
 
-### Step 9. Shutdown (When Done)
+### Step 10. Shutdown (When Done)
 
 Gracefully stop all services in reverse order:
 
@@ -346,9 +382,12 @@ cd llms/vllm
 # Stop NGINX gateway first
 docker compose down
 
+# Stop LiteLLM
+cd litellm && docker compose down && cd ..
+
 # Stop model servers
 cd gpt-oss-120b && docker compose down && cd ..
-cd gpt-oss-120b && docker compose down && cd ..
+cd gpt-oss-20b && docker compose down && cd ..
 cd qwen-30b && docker compose down && cd ..
 
 # Optional: Remove network (only if no other services are using it)
@@ -465,23 +504,31 @@ command: >
 
 ### NGINX Configuration
 
-The NGINX configuration (`nginx/multi-model.conf`) provides:
+The NGINX configuration (`nginx/multi-model.conf`) provides HTTPS termination and proxies all requests to LiteLLM:
 
-#### Path-based Routing
+#### Proxy to LiteLLM
 
 ```nginx
-# Route pattern: /<model-name>/<api-path>
-location /gpt-oss-120b/ {
-    rewrite ^/gpt-oss-120b/(.*) /$1 break;  # Strip prefix
-    proxy_pass http://gpt-oss-120b-backend;
+upstream litellm-backend {
+    server vllm-litellm-proxy:4000;
+    keepalive 32;
+}
+
+location / {
+    proxy_pass http://litellm-backend;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
 }
 ```
+
+**Note**: Model routing is handled by LiteLLM, not NGINX. To add or modify model routes, edit `litellm/config.yaml`.
 
 #### Streaming Optimization
 
 ```nginx
 proxy_buffering off;           # Disable buffering for streaming
-proxy_cache off;               # No caching for real-time responses
 proxy_http_version 1.1;        # HTTP/1.1 for keepalive
 proxy_set_header Connection "";# Persistent connections
 ```
@@ -495,8 +542,6 @@ Default timeouts are set to 30 minutes (1800 seconds) to accommodate:
 
 ```nginx
 proxy_read_timeout 1800;
-proxy_connect_timeout 1800;
-proxy_send_timeout 1800;
 ```
 
 ### Environment Variables
@@ -636,10 +681,13 @@ docker inspect vllm-gpt-oss-120b | grep -A 10 DeviceRequests
 
 ## Usage Examples
 
+All requests go through a single unified endpoint. Model selection is done via the `model` field in the request body, and LiteLLM routes to the appropriate backend.
+
 ### List Available Models
 
 ```bash
-curl -k https://localhost/v1/models | jq
+curl -k https://localhost/v1/models \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" | jq
 ```
 
 Response:
@@ -647,21 +695,9 @@ Response:
 {
   "object": "list",
   "data": [
-    {
-      "id": "gpt-oss-20b",
-      "object": "model",
-      "endpoint": "/gpt-oss-20b/v1/chat/completions"
-    },
-    {
-      "id": "gpt-oss-120b",
-      "object": "model",
-      "endpoint": "/gpt-oss-120b/v1/chat/completions"
-    },
-    {
-      "id": "qwen-30b",
-      "object": "model",
-      "endpoint": "/qwen-30b/v1/chat/completions"
-    }
+    {"id": "gpt-oss-20b", "object": "model"},
+    {"id": "gpt-oss-120b", "object": "model"},
+    {"id": "qwen-30b", "object": "model"}
   ]
 }
 ```
@@ -669,10 +705,11 @@ Response:
 ### Chat Completion
 
 ```bash
-curl -k https://localhost/gpt-oss-120b/v1/chat/completions \
+curl -k https://localhost/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -d '{
-    "model": "openai/gpt-oss-120b",
+    "model": "gpt-oss-120b",
     "messages": [
       {"role": "system", "content": "You are a helpful AI assistant."},
       {"role": "user", "content": "What is the capital of France?"}
@@ -685,10 +722,11 @@ curl -k https://localhost/gpt-oss-120b/v1/chat/completions \
 ### Streaming Response
 
 ```bash
-curl -k https://localhost/qwen-30b/v1/chat/completions \
+curl -k https://localhost/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -d '{
-    "model": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+    "model": "qwen-30b",
     "messages": [
       {"role": "user", "content": "Write a Python function to calculate fibonacci numbers."}
     ],
@@ -700,10 +738,11 @@ curl -k https://localhost/qwen-30b/v1/chat/completions \
 ### Tool Calling (Function Calling)
 
 ```bash
-curl -k https://localhost/gpt-oss-120b/v1/chat/completions \
+curl -k https://localhost/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -d '{
-    "model": "openai/gpt-oss-120b",
+    "model": "gpt-oss-120b",
     "messages": [
       {"role": "user", "content": "What is the weather in San Francisco?"}
     ],
@@ -738,20 +777,21 @@ curl -k https://localhost/gpt-oss-120b/v1/chat/completions \
 
 ```python
 from openai import OpenAI
+import os
 
-# Configure client to use local gateway
+# Configure client to use local gateway via HTTPS
 client = OpenAI(
-    base_url="https://localhost/gpt-oss-120b/v1",
-    api_key="not-used",  # vLLM doesn't require API key
+    base_url="https://localhost/v1",
+    api_key=os.environ.get("LITELLM_MASTER_KEY", "sk-your-key"),
 )
 
 # Disable SSL verification for self-signed certificates
 import httpx
 client._client = httpx.Client(verify=False)
 
-# Make request
+# Make request - specify model in the request
 response = client.chat.completions.create(
-    model="openai/gpt-oss-120b",
+    model="gpt-oss-120b",  # LiteLLM routes to correct backend
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Explain Docker in simple terms."}
@@ -765,17 +805,35 @@ print(response.choices[0].message.content)
 
 ### Using Different Models
 
-Switch models by changing the path prefix:
+Switch models by changing the `model` field in your request:
 
 ```python
+from openai import OpenAI
+import os
+
+# Single client for all models
+client = OpenAI(
+    base_url="https://localhost/v1",
+    api_key=os.environ.get("LITELLM_MASTER_KEY"),
+)
+
 # Use GPT-OSS-120B (best for reasoning and tool calling)
-client_120b = OpenAI(base_url="https://localhost/gpt-oss-120b/v1", api_key="not-used")
+response = client.chat.completions.create(
+    model="gpt-oss-120b",
+    messages=[{"role": "user", "content": "Solve this math problem..."}]
+)
 
 # Use Qwen-30B (best for code generation)
-client_qwen = OpenAI(base_url="https://localhost/qwen-30b/v1", api_key="not-used")
+response = client.chat.completions.create(
+    model="qwen-30b",
+    messages=[{"role": "user", "content": "Write a Python function..."}]
+)
 
 # Use GPT-OSS-20B (fastest, smaller model)
-client_20b = OpenAI(base_url="https://localhost/gpt-oss-20b/v1", api_key="not-used")
+response = client.chat.completions.create(
+    model="gpt-oss-20b",
+    messages=[{"role": "user", "content": "Quick question..."}]
+)
 ```
 
 ---
@@ -787,6 +845,9 @@ client_20b = OpenAI(base_url="https://localhost/gpt-oss-20b/v1", api_key="not-us
 ```bash
 # NGINX gateway logs
 docker logs vllm-nginx-proxy -f
+
+# LiteLLM proxy logs
+docker logs vllm-litellm-proxy -f
 
 # Model server logs
 docker logs vllm-gpt-oss-120b -f
@@ -809,13 +870,16 @@ docker exec vllm-gpt-oss-120b nvidia-smi
 
 ### Stop Services
 
-Stop services in reverse order (NGINX first, then models):
+Stop services in reverse order (NGINX first, then LiteLLM, then models):
 
 ```bash
 cd llms/vllm
 
 # Stop NGINX gateway first
 docker compose down
+
+# Stop LiteLLM
+cd litellm && docker compose down && cd ..
 
 # Stop model servers (default docker-compose.yml)
 cd gpt-oss-120b && docker compose down && cd ..
@@ -829,6 +893,7 @@ cd gpt-oss-20b && docker compose -f docker-compose-gpu.yml down && cd ..
 
 # Or stop specific services without removing containers
 docker stop vllm-nginx-proxy
+docker stop vllm-litellm-proxy
 docker stop vllm-gpt-oss-120b
 docker stop vllm-qwen-30b
 docker stop vllm-gpt-oss-20b
@@ -872,33 +937,34 @@ cp llms/vllm/gpt-oss-120b/docker-compose.yml llms/vllm/my-model/
 ```
 
 2. Edit `llms/vllm/my-model/docker-compose.yml`:
-   - Change container name
-   - Update port mapping
+   - Change container name (e.g., `vllm-my-model`)
+   - Update port mapping if needed
    - Modify vLLM serve command with new model
 
-3. Add upstream and location to `nginx/multi-model.conf`:
+3. Add the model to LiteLLM's `litellm/config.yaml`:
 
-```nginx
-upstream my-model-backend {
-    server vllm-my-model:8000;
-    keepalive 32;
-}
+```yaml
+model_list:
+  # ... existing models ...
 
-location /my-model/ {
-    rewrite ^/my-model/(.*) /$1 break;
-    proxy_pass http://my-model-backend;
-    # ... (copy other proxy settings)
-}
+  - model_name: my-model
+    litellm_params:
+      model: openai/my-model-name
+      api_base: http://vllm-my-model:8000/v1
+      api_key: "not-used"
 ```
 
-4. Update model list in NGINX config endpoints
-
-5. Restart services:
+4. Start the model server and restart LiteLLM:
 
 ```bash
-cd llms/vllm/my-model && docker compose up -d
-cd .. && docker compose restart
+# Start the new model
+cd llms/vllm/my-model && docker compose up -d && cd ..
+
+# Restart LiteLLM to pick up config changes
+cd litellm && docker compose restart litellm && cd ..
 ```
+
+**Note**: NGINX configuration does not need to change when adding models. All model routing is handled by LiteLLM.
 
 ---
 
@@ -909,14 +975,17 @@ cd .. && docker compose restart
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | `curl: (60) SSL certificate problem` | Self-signed certificate not trusted | Use `-k` flag with curl, or install certificate in system trust store |
-| `502 Bad Gateway` from NGINX | Backend vLLM server not running | Check `docker ps`, verify model container is running and healthy |
+| `502 Bad Gateway` from NGINX | LiteLLM or vLLM server not running | Check `docker ps`, verify LiteLLM and model containers are running |
 | `504 Gateway Timeout` | Model loading or inference taking too long | Increase NGINX timeout in `multi-model.conf`, check vLLM logs for errors |
+| `401 Unauthorized` | Invalid or missing LiteLLM API key | Check `Authorization: Bearer` header matches `LITELLM_MASTER_KEY` in .env |
+| `No models available` | All vLLM servers down | Verify vLLM containers are running: `docker ps \| grep vllm` |
 | `CUDA Out of Memory` | Multiple large models exceeding GPU capacity | Stop some models, reduce `--max-model-len`, or use `--kv-cache-dtype fp8` |
 | `Network vllm_network not found` | Network not created | Create network: `docker network create vllm_network` |
 | `Cannot access gated repo` | HuggingFace token invalid or missing | Run `./sync-env.sh` to propagate HF_TOKEN, verify token in .env file |
 | Container fails to start | Port already in use | Change port mapping in docker-compose.yml or stop conflicting service |
 | Model download fails | Network issues or authentication | Check HF_TOKEN in .env, run `./sync-env.sh`, verify internet connectivity |
 | `HF_TOKEN not passed to containers` | Environment variable not synchronized | Run `./sync-env.sh` to create .env files in model directories |
+| LiteLLM connection refused | Model container hostname mismatch | Verify model container names in `litellm/config.yaml` match actual container names |
 
 ### Memory Management
 
@@ -934,16 +1003,19 @@ nvidia-smi
 ### Health Check Debugging
 
 ```bash
-# Check NGINX health
+# Check NGINX health (proxied through LiteLLM)
 curl -k https://localhost/health
+
+# Check LiteLLM health directly
+curl http://localhost:4000/health
 
 # Check individual model server health
 curl http://localhost:8001/health  # GPT-OSS-20B direct port
 curl http://localhost:8002/health  # GPT-OSS-120B direct port
 curl http://localhost:8003/health  # Qwen-30B direct port
 
-# Check from inside NGINX container
-docker exec vllm-nginx-proxy wget -O- http://vllm-gpt-oss-120b:8000/health
+# Check from inside LiteLLM container
+docker exec -it vllm-litellm-proxy python3 -c "import urllib.request; print(urllib.request.urlopen('http://vllm-gpt-oss-20b:8000/v1/models').read().decode())"
 ```
 
 ### View Container Details
@@ -955,8 +1027,11 @@ docker exec vllm-nginx-proxy cat /etc/nginx/conf.d/default.conf
 # Check NGINX error logs
 docker exec vllm-nginx-proxy cat /var/log/nginx/error.log
 
+# Check LiteLLM configuration
+docker exec vllm-litellm-proxy cat /app/config.yaml
+
 # Verify network connectivity
-docker exec vllm-nginx-proxy ping vllm-gpt-oss-120b
+docker exec -it vllm-litellm-proxy python3 -c "import urllib.request; print(urllib.request.urlopen('http://vllm-gpt-oss-20b:8000/v1/models').read().decode())"
 ```
 
 ### Certificate Issues
@@ -995,14 +1070,16 @@ For optimal performance:
 ### Security
 
 - **Replace self-signed certificates** with CA-issued certificates from Let's Encrypt or your organization
-- **Add authentication** using NGINX auth_basic or integrate with OAuth/OIDC
+- **Change default credentials**: Set strong `LITELLM_MASTER_KEY` and `LITELLM_UI_PASSWORD` in .env
+- **API key management**: Use LiteLLM's Admin UI to create per-user API keys with rate limits
 - **Firewall rules**: Restrict access to port 443/80 to authorized networks
 - **Secrets management**: Use Docker secrets or external secret management (e.g., Vault)
 
 ### Monitoring
 
-- **Metrics collection**: Integrate with Prometheus for vLLM metrics
-- **Log aggregation**: Ship NGINX and vLLM logs to centralized logging (e.g., ELK stack)
+- **LiteLLM Admin UI**: Access `https://localhost/ui` for real-time monitoring and cost tracking
+- **Metrics collection**: LiteLLM exposes Prometheus metrics at `/metrics` endpoint
+- **Log aggregation**: Ship NGINX, LiteLLM, and vLLM logs to centralized logging (e.g., ELK stack)
 - **Alerting**: Configure alerts for health check failures, high latency, or OOM errors
 
 ### High Availability
@@ -1022,6 +1099,7 @@ For optimal performance:
 ## References
 
 - [vLLM Documentation](https://docs.vllm.ai/)
+- [LiteLLM Documentation](https://docs.litellm.ai/)
 - [NGINX Reverse Proxy Guide](https://docs.nginx.com/nginx/admin-guide/web-server/reverse-proxy/)
 - [Docker Compose Networking](https://docs.docker.com/compose/networking/)
 - [HuggingFace Model Hub](https://huggingface.co/models)
