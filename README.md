@@ -15,32 +15,6 @@ A production-ready multi-model inference gateway that runs multiple vLLM model s
 - Health monitoring and load balancing
 - Support for both DGX Spark (UMA) and multi-GPU VMs
 
-**Quick Start:**
-```bash
-cd vllm/
-./quick-start.sh
-```
-
-**Deployment Options:**
-
-1. **DGX Spark / Single Model Deployment**
-   - Uses standard `docker-compose.yml` files
-   - Dynamic GPU allocation with Unified Memory Architecture
-   - See [vllm/README.md](vllm/README.md) for full documentation
-
-2. **VM Deployment with Multiple Models**
-   - Uses `docker-compose-gpu.yml` files for dedicated GPU assignments
-   - Two pre-configured scenarios:
-     - **Scenario 1**: GPT-OSS-120B alone (GPUs 0, 1, 2)
-     - **Scenario 2**: GPT-OSS-20B + Qwen-30B together (GPU 0 + GPUs 1, 2)
-   - No GPU conflicts between concurrent models
-   - See [vllm/README.md#vm-deployment-with-dedicated-gpu-allocation](vllm/README.md#vm-deployment-with-dedicated-gpu-allocation)
-
-**GPU Memory Requirements:**
-- GPT-OSS-20B: ~20GB (single GPU)
-- GPT-OSS-120B: ~60GB (3 GPUs with tensor parallelism)
-- Qwen-30B: ~30GB (2 GPUs with tensor parallelism)
-
 ## Architecture
 
 ```
