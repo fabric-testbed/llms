@@ -32,3 +32,4 @@ networks:
   vllm_network:
     name: vllm_network
     driver: bridge
+    external: true
