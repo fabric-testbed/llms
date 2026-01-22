@@ -667,7 +667,7 @@ docker exec vllm-litellm-redis redis-cli ping
 docker exec vllm-litellm-postgres pg_isready -U litellm
 
 # Test model connectivity from LiteLLM
-docker exec vllm-litellm-proxy curl http://vllm-gpt-oss-120b:8000/health
+docker exec -it vllm-litellm-proxy python3 -c "import urllib.request; print(urllib.request.urlopen('http://vllm-gpt-oss-20b:8000/v1/models').read().decode())"
 ```
 
 ### Debug Mode
